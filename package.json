@@ -1,0 +1,48 @@
+{
+  "name": "torturedcheck",
+  "version": "0.1.0",
+  "description": "Tortured-phrase detection for academic documents: identifies machine-paraphrased / paper-mill content using the Problematic Paper Screener (PPS) dictionary by Cabanac, Labbé & Magazinov.",
+  "license": "MIT",
+  "author": "Gilad Feldman",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/giladfeldman/torturedcheck.git"
+  },
+  "homepage": "https://github.com/giladfeldman/torturedcheck#readme",
+  "bugs": {
+    "url": "https://github.com/giladfeldman/torturedcheck/issues"
+  },
+  "keywords": [
+    "tortured-phrases",
+    "paper-mill",
+    "academic-integrity",
+    "plagiarism-detection",
+    "meta-science",
+    "paraphrase-detection"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./dist/*": "./dist/*"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc && npm run copy-data",
+    "copy-data": "node scripts/copy-data.mjs",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.4.0",
+    "rimraf": "^5.0.0"
+  }
+}

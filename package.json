@@ -1,6 +1,6 @@
 {
   "name": "torturedcheck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Tortured-phrase detection for academic documents: identifies machine-paraphrased / paper-mill content using the Problematic Paper Screener (PPS) dictionary by Cabanac, Labbé & Magazinov.",
   "license": "MIT",
   "author": "Gilad Feldman",

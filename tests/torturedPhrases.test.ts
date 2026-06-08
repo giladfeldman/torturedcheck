@@ -256,6 +256,47 @@ describe('scanForTorturedPhrases', () => {
   });
 });
 
+describe('PHRASE_WHITELIST — precision guard (PU9 + domain terms, 2026-06-08)', () => {
+  // The whitelist is the library's primary precision mechanism: phrases that
+  // appear in the PPS dictionary as "tortured" but are ordinary scientific
+  // prose. Before these tests the whitelist had ZERO coverage — removing the
+  // `PHRASE_WHITELIST.has(...)` check still passed all 30 tests, so the guard
+  // could regress silently. These tests fail if the check is removed or a
+  // curated entry is dropped, protecting the observed 100% precision on real
+  // papers. Each scans a dictionary whose ONLY entry is the whitelisted phrase
+  // (so a non-zero result can only mean the whitelist failed).
+  function scanOne(tortured: string, correct: string, sentence: string): TorturedPhraseMatch[] {
+    const dict = { ...TEST_DICTIONARY, phrases: [{ tortured, correct }] };
+    return scanForTorturedPhrases(sentence, dict, buildFirstWordIndex(dict.phrases));
+  }
+
+  it('blocks a whitelisted ML collocation that is itself a PPS tortured form', () => {
+    // "machine learning" is in the PPS dictionary as a torture of "discriminative learning"
+    expect(scanOne('machine learning', 'discriminative learning',
+      'We trained a machine learning model on the data.')).toHaveLength(0);
+  });
+
+  it('blocks a whitelisted stats term ("effect size")', () => {
+    expect(scanOne('effect size', 'impact magnitude',
+      'The effect size was small but reliable.')).toHaveLength(0);
+  });
+
+  it.each([
+    ['brain organization', 'neural network', 'Functional brain organization was assessed with fMRI.'],
+    ['feedback processing', 'back propagation', 'Reward feedback processing elicited a frontal negativity.'],
+    ['facial expression processing', 'facial expression recognition', 'Facial expression processing was impaired in the clinical group.'],
+    ['malignant growth', 'cancer', 'Patients with a malignant growth were excluded from the sample.'],
+  ])('blocks in-domain legitimate prose "%s" (precision-first whitelist, 2026-06-08)', (tortured, correct, sentence) => {
+    expect(scanOne(tortured, correct, sentence)).toHaveLength(0);
+  });
+
+  it('still DETECTS a genuine tortured phrase that is NOT whitelisted (recall preserved)', () => {
+    // Guard against over-broad whitelisting: a real torture must still fire.
+    expect(scanOne('counterfeit consciousness', 'artificial intelligence',
+      'The system uses counterfeit consciousness to decide.')).toHaveLength(1);
+  });
+});
+
 describe('getRiskLevel — density-aware (B30, curated 2026-04-29)', () => {
   it('returns clean when no matches', () => {
     expect(getRiskLevel(0).level).toBe('clean');

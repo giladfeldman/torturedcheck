@@ -222,6 +222,23 @@ const PHRASE_WHITELIST = new Set([
   'control groups',
   'treatment groups',
   'experimental groups',
+  // Domain-specific standard terminology (psychology / neuroscience / medicine —
+  // CitationGuard's core audience). Each IS in the PPS dictionary as a tortured
+  // form, but each is also ordinary scientific prose in its field, so flagging it
+  // is a false accusation on a legitimate paper. Whitelisting trades a near-zero
+  // recall risk (these are implausible paraphrase targets WITHIN psych/neuro/
+  // medicine — e.g. a psych paper-mill is not paraphrasing "back propagation")
+  // for precision, per the curation policy above and the precision-first
+  // directive. Deliberately NOT whitelisted (left detectable — genuinely
+  // ambiguous or out-of-core-domain; add reactively on a real FP report):
+  // "component extraction" / "grouping methods" (legitimate PCA / cluster terms
+  // AND used as positive detection fixtures in the test suite), "supply chain
+  // control", "place of interest", "area unit", "vital determinant",
+  // "information mining".
+  'brain organization',           // PPS "correct": neural network — standard neuroscience
+  'feedback processing',          // PPS "correct": back propagation — standard ERP/EEG cognitive psych
+  'facial expression processing', // PPS "correct": facial expression recognition — affective neuroscience
+  'malignant growth',             // PPS "correct": cancer — standard oncology / pathology English
 ]);
 
 /**

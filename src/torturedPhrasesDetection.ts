@@ -223,7 +223,7 @@ const PHRASE_WHITELIST = new Set([
   'treatment groups',
   'experimental groups',
   // Domain-specific standard terminology (psychology / neuroscience / medicine —
-  // CitationGuard's core audience). Each IS in the PPS dictionary as a tortured
+  // Scimeto's core audience). Each IS in the PPS dictionary as a tortured
   // form, but each is also ordinary scientific prose in its field, so flagging it
   // is a false accusation on a legitimate paper. Whitelisting trades a near-zero
   // recall risk (these are implausible paraphrase targets WITHIN psych/neuro/

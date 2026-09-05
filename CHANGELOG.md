@@ -2,8 +2,8 @@
 
 ## 0.1.1 — 2026-06-08
 
-Precision-first hardening (via `citationguard-iterate`). Verified against the
-known-legitimate CitationGuard corpus (6 real published papers, 74k words):
+Precision-first hardening (via the platform's hardening workflow). Verified against the
+known-legitimate Scimeto corpus (6 real published papers, 74k words):
 **0 false positives** both before and after — the existing `PHRASE_WHITELIST`
 already held the line; this release locks that in and extends it for the
 psych/neuro/medicine audience.
@@ -18,7 +18,7 @@ psych/neuro/medicine audience.
 - **Four domain terms added to `PHRASE_WHITELIST`**: `brain organization`,
   `feedback processing`, `facial expression processing`, `malignant growth`.
   Each is a PPS dictionary "tortured" entry but is also ordinary scientific prose
-  in psychology / neuroscience / medicine (CitationGuard's core audience), where
+  in psychology / neuroscience / medicine (Scimeto's core audience), where
   it is an implausible paraphrase target. Whitelisting them prevents false
   accusations on legitimate papers at near-zero recall cost.
 
@@ -31,4 +31,4 @@ psych/neuro/medicine audience.
 
 ## 0.1.0
 
-- Initial behavior-preserving extraction from the CitationGuard platform.
+- Initial behavior-preserving extraction from the Scimeto platform.

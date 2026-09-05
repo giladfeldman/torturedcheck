@@ -8,7 +8,7 @@ dictionary by Cabanac, Labbé & Magazinov.
 Pure `text → structured data` — no I/O, no database, no HTTP. Bundles the PPS
 dictionary; works offline out of the box.
 
-Extracted from the CitationGuard platform so the community can validate and
+Extracted from the Scimeto platform so the community can validate and
 reuse it. Accuracy iteration is ongoing — see [CHANGELOG.md](./CHANGELOG.md) and
 the [release tags](https://github.com/giladfeldman/torturedcheck/tags) for the
 current version. (No version is quoted here on purpose; a hardcoded one goes

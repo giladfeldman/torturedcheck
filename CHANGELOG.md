@@ -2,7 +2,7 @@
 
 ## 0.1.1 — 2026-06-08
 
-Precision-first hardening (via `scimeto-iterate`). Verified against the
+Precision-first hardening (via the platform's hardening workflow). Verified against the
 known-legitimate Scimeto corpus (6 real published papers, 74k words):
 **0 false positives** both before and after — the existing `PHRASE_WHITELIST`
 already held the line; this release locks that in and extends it for the

@@ -5,7 +5,7 @@
 ## Consumer: Scimeto
 
 - **Consumer:** the Scimeto platform (closed source)
-- **Pinned in:** `apps/worker/package.json`, by **git tag** (`github:giladfeldman/torturedcheck#vX.Y.Z`)
+- **Pinned in:** the platform's worker package manifest, by **git tag** (`github:giladfeldman/torturedcheck#vX.Y.Z`)
 - **Uses:** tortured-phrase detection
 - **Reaches users through:** the tortured-phrase processor, whose output is shown to researchers
   as findings about their manuscript and exported into reports they act on.
@@ -35,7 +35,7 @@ So:
 ## Releasing
 
 The pin downstream resolves a **TAG**. A commit on `main` with no tag changes nothing
-for Scimeto, and Railway installs from the tag, so a local path or branch override will
+for Scimeto, and its deploy installs from the tag, so a local path or branch override will
 pass locally and fail on deploy.
 
 1. test → `npm run build` → `npm test`

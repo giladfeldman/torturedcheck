@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below. Please also cite the source of the bundled dictionary (references)."
+title: "torturedcheck: tortured-phrase detection for academic documents"
+type: software
+authors:
+  - family-names: Feldman
+    given-names: Gilad
+    affiliation: University of Innsbruck
+version: "0.1.2"
+license: MIT
+repository-code: "https://github.com/giladfeldman/torturedcheck"
+abstract: >-
+  A TypeScript library that scans academic text for tortured phrases, the nonsensical
+  synonym substitutions left by paraphrasing tools, using a bundled snapshot of the
+  Problematic Paper Screener dictionary, and rates the document with a density-aware
+  risk level.
+keywords:
+  - tortured phrases
+  - paper mills
+  - research integrity
+  - meta-science
+references:
+  - type: article
+    title: "Tortured phrases: A dubious writing style emerging in science. Evidence of critical issues affecting established journals"
+    authors:
+      - family-names: Cabanac
+        given-names: Guillaume
+      - family-names: Labbé
+        given-names: Cyril
+      - family-names: Magazinov
+        given-names: Alexander
+    year: 2021
+    doi: "10.48550/arXiv.2107.06751"

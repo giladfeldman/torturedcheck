@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+**No behavioural change.** Documentation, tooling and source comments only.
+
+### Added
+- A full README covering the scientific basis (by DOI), a runnable quickstart, the API
+  and types, the risk-level rules, the whitelist, and the limitations. The limitations
+  include that 7 of the 7,942 dictionary entries are never indexed and 15 more can never
+  match, and that match offsets refer to the normalized text.
+- `scripts/check-docs-coverage.mjs`, a documentation-drift gate. It derives the public
+  surface from `src/index.ts` with the TypeScript compiler API and fails on any
+  undocumented token or on a version mismatch between `package.json`, `CHANGELOG.md`,
+  `CITATION.cff` and the README install pin. It also builds the package and runs the
+  README quickstart. `tests/docsCoverageGate.test.ts` pins the gate two-sided, and it
+  runs as part of `npm test`.
+- `CITATION.cff` and `CONTRIBUTING.md`.
+
+### Fixed
+- The README install example pinned `v0.1.1` instead of the current tag.
+
 ## 0.1.2 — 2026-09-11
 
 **No behavioural change.** A documentation and naming release, tagged so that

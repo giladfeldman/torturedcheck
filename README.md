@@ -39,7 +39,7 @@ Pin a tag:
 ```jsonc
 // package.json
 "dependencies": {
-  "torturedcheck": "github:giladfeldman/torturedcheck#v0.1.2"
+  "torturedcheck": "github:giladfeldman/torturedcheck#v0.1.3"
 }
 ```
 

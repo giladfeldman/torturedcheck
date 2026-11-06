@@ -5,9 +5,10 @@ type: software
 authors:
   - family-names: Feldman
     given-names: Gilad
+    orcid: "https://orcid.org/0000-0003-2812-6599"
     affiliation: University of Innsbruck
 version: "0.1.3"
-license: MIT
+license: AGPL-3.0-only
 repository-code: "https://github.com/giladfeldman/torturedcheck"
 abstract: >-
   A TypeScript library that scans academic text for tortured phrases, the nonsensical

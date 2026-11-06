@@ -210,3 +210,20 @@ comes from the Problematic Paper Screener and is licensed under CC BY 4.0.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 Downstream consumers are listed in [DOWNSTREAM.md](DOWNSTREAM.md).
+
+<!-- license-citation:start -->
+## License and citation
+
+Copyright (C) 2026 Gilad Feldman.
+
+This software is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You may use, study, modify and share it, including for commercial purposes, provided that the complete source code of any modified version is published under the same licence - including when the modified version is offered as a hosted online service.
+
+**Commercial licences** without these conditions are available from the author: Gilad Feldman (https://orcid.org/0000-0003-2812-6599).
+
+Versions released before 2026-11-06 were licensed under MIT and remain available under those terms.
+
+**How to cite.** If you use this software in research, please cite it. GitHub's *Cite this repository* button (from [CITATION.cff](CITATION.cff)) gives APA and BibTeX. In APA style:
+
+> Feldman, G. (2026). *torturedcheck: tortured-phrase detection for academic documents* (Version 0.1.3) [Computer software]. https://github.com/giladfeldman/torturedcheck#readme
+
+<!-- license-citation:end -->

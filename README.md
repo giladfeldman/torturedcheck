@@ -201,10 +201,9 @@ Please cite the software (see [CITATION.cff](CITATION.cff)): Feldman, G. (2026).
 Please also cite the source of the dictionary: Cabanac, Labbé & Magazinov (2021),
 [10.48550/arXiv.2107.06751](https://doi.org/10.48550/arXiv.2107.06751).
 
-## License
+## Third-party data
 
-The code is licensed under MIT (see [LICENSE](LICENSE)). The bundled dictionary data
-comes from the Problematic Paper Screener and is licensed under CC BY 4.0.
+The bundled dictionary data comes from the Problematic Paper Screener and is licensed under CC BY 4.0.
 
 ## Contributing
 

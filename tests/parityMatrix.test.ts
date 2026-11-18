@@ -118,6 +118,60 @@ describe('torturedcheck: "nothing found" vs "nothing checked"', () => {
   });
 });
 
+// Shapes found by the tier-2 consult of 2026-11-18 (Sonnet), each watched failing on the
+// build before the fix. Three of them (glued footnote digit, zero-width space, quotes
+// between the words) were read correctly by 0.1.3 and broken by the first 0.2.0 draft.
+describe('torturedcheck: consult shapes (2026-11-18)', () => {
+  const index = buildFirstWordIndex(DICT.phrases);
+  const cells: Array<[string, string, string]> = [
+    // [label, text, the verbatim span the match must cover]
+    ['en dash before', 'in the field of AI–fluffy logic is used', 'fluffy logic'],
+    ['em dash before', 'in the field of AI—fluffy logic is used', 'fluffy logic'],
+    ['glued footnote digit', 'counterfeit consciousness12 is', 'counterfeit consciousness'],
+    ['superscript footnote', 'counterfeit consciousness¹ is', 'counterfeit consciousness'],
+    ['possessive', "man-made brainpower's limits", 'man-made brainpower'],
+    ['decomposed accent', 'counterfeit consciouśness is', 'counterfeit consciouśness'],
+    ['soft hyphen', 'counter­feit consciousness', 'counter­feit consciousness'],
+    ['zero-width space', 'counterfeit​ consciousness', 'counterfeit​ consciousness'],
+    ['double quotes', 'counterfeit "consciousness"', 'counterfeit "consciousness'],
+    ['single quotes', "counterfeit 'consciousness'", "counterfeit 'consciousness"],
+    ['curly quotes', 'counterfeit “consciousness”', 'counterfeit “consciousness'],
+  ];
+  it.each(cells)('%s', (_label, text, span) => {
+    const m = scanForTorturedPhrases(text, DICT, index);
+    expect(m).toHaveLength(1);
+    expect(text.slice(m[0].offset, m[0].offset + m[0].length)).toBe(span);
+    expect(m[0].matchedText).toBe(span);
+  });
+  it.each([
+    'counterfeit consciousnesses',   // a longer word is not the entry word
+    'counterfeit consciousnessx',
+    'ASCII semi-fluffy logic',       // a true hyphen still makes a compound
+  ])('no match in %j', text => {
+    expect(scanForTorturedPhrases(text, DICT, index)).toEqual([]);
+  });
+  it('a failed word count (NaN) is not "clean"', () => {
+    expect(getRiskLevel(0, NaN).level).toBe('not_checked');
+  });
+  it('an empty text counted the README way is not "clean"', () => {
+    expect(getRiskLevel(0, tokenize(normalizeText('')).length).level).toBe('not_checked');
+  });
+  it('dictionary entries that read identically are reported as duplicates', () => {
+    const cov = dictionaryCoverage([
+      { tortured: 'fluffy logic', correct: 'fuzzy logic' },
+      { tortured: 'Fluffy  Logic', correct: 'fuzzy logic (2)' },
+      { tortured: 'fluffy, logic', correct: 'other' },
+    ]);
+    expect(cov.duplicates).toEqual(['Fluffy  Logic']);
+  });
+  it('the context never cuts a surrogate pair in half', () => {
+    // The leading 'x' puts both 80-character cut points on the second half of a pair.
+    const text = 'x' + '\u{1D400}'.repeat(60) + ' counterfeit consciousness ' + '\u{1D400}'.repeat(60);
+    const [m] = scanForTorturedPhrases(text, DICT, index);
+    expect(m.context).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+  });
+});
+
 // Found by the 2026-11-18 corpus diff: after hyphens became word separators, a match could
 // start inside a hyphenated compound ("self-regulated learning" read as the entry
 // "regulated learning") or run across punctuation ("image. Acknowledgment",

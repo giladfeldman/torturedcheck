@@ -24,31 +24,44 @@ behaviour change. Each item below is pinned by `tests/parityMatrix.test.ts`, whi
   (`self-regulated learning` is not the entry `regulated learning`), and the text between its words
   must match the entry's separators (no match across a full stop, slash or bracket the entry lacks).
 - **`getRiskLevel(0, 0)` is `not_checked`, not `clean`.** A caller that passes a word count of 0 (an
-  empty or failed text extraction) no longer receives an all-clear. Calls without a word count keep
-  their meaning.
+  empty or failed text extraction), or `NaN`, no longer receives an all-clear. Calls without a word
+  count keep their meaning. The README example counts words with `tokenize(normalizeText(text))`, so an
+  empty text gives 0 (its old `text.split(/\s+/).length` gave 1 and so `clean`).
+- **Shapes found by a second-model review** (each pinned by a test that failed before the fix): accents
+  written as a letter plus a combining mark read like the precomposed letter; soft hyphens and zero-width
+  characters inside a word are ignored; quotation marks between the words count as a space
+  (`counterfeit "consciousness"`); a phrase after an en or em dash (`AI—fluffy logic`) is matched, since
+  only a true hyphen makes a compound; the last word may carry a footnote number glued on by extraction
+  (`consciousness12`, `consciousness¹`) or a possessive (`brainpower's`). The glued-number, zero-width and
+  quotation-mark shapes were read by 0.1.3 and lost in an earlier draft of this release.
+- `context` never cuts a surrogate pair (an emoji or mathematical letter) in half.
 
 ### Added
 - `matchedText` on each match: the phrase exactly as written.
 - `normalizeWithMap(text)`: the normalisation plus the map back to the original characters.
 - `dictionaryCoverage(phrases)` and the `DictionaryCoverage` type: what the scanner can and cannot see
-  of a dictionary (indexed, single-word, unmatchable, whitelisted).
+  of a dictionary (indexed, single-word, unmatchable, whitelisted, and `duplicates`: entries that read
+  exactly like an earlier entry).
 
 ### Licence
 - Licensed AGPL-3.0-only, with citation metadata (changed after 0.1.3, first tagged here).
 
 ### Corpus check
 Before/after scan of 8,773 full-text psychology articles (0.1.3 vs 0.2.0, same dictionary):
-- Matches 955 -> 865. Reported positions point at the phrase as written in 0 of 955 matches before and
-  865 of 865 after.
+- Matches 955 -> 867. Reported positions point at the phrase as written in 0 of 955 matches before and
+  867 of 867 after.
 - Dictionary entries the scanner can reach: 7,916 -> 7,936 of 7,942 multi-word entries (the 6 left are
   whitelisted on purpose).
-- Lost 117, all false matches in 0.1.3: entries whose digits or punctuation were stripped
+- Lost 116, all false matches in 0.1.3: entries whose digits or punctuation were stripped
   ("1/3-birthday party" read as "birthday party", 30; "center i7", 9; "preserved at 9.5", 9) and
   matches that crossed a comma, colon, bracket or slash ("education (16.8%), information",
   "green: money", "census.gov/.../education/data").
-- Gained 27: hyphenated or line-broken forms the old reader missed ("search-engine", "speech-processing",
-  "bag-of-words", "PC-assisted"). One gain crosses a table line break ("exchange / Work").
-- Risk level changed for 107 articles.
+- Gained 28: hyphenated or line-broken forms the old reader missed ("search-engine", "speech-processing",
+  "bag-of-words", "PC-assisted") and one possessive ("mutual information's"). One gain crosses a table
+  line break ("exchange / Work").
+- Kept as in 0.1.3: `computer-based "intelligence test"` still matches the entry `computer-based
+  intelligence`, because quotation marks between words count as a space (see Limitations in the README).
+- Risk level changed for 106 articles.
 
 ## 0.1.3 — 2026-09-30
 

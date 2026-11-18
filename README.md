@@ -57,7 +57,7 @@ installing from a local git URL into an empty project.
 every run.
 
 ```js
-import { loadDictionary, buildFirstWordIndex, scanForTorturedPhrases, getRiskLevel } from 'torturedcheck';
+import { loadDictionary, buildFirstWordIndex, scanForTorturedPhrases, getRiskLevel, normalizeText, tokenize } from 'torturedcheck';
 
 const text =
   'Our counterfeit consciousness model reduced the kidney disappointment rate. ' +
@@ -73,7 +73,8 @@ for (const m of matches) console.log(`${m.tortured} -> ${m.correct} @${m.offset}
 // surface region -> surface area @82+14 "Surface Region"
 // (offsets are in `text` as passed in: text.slice(82, 96) === 'Surface Region')
 
-const risk = getRiskLevel(matches.length, text.split(/\s+/).length);
+// Count words the way the scanner reads them: an empty text gives 0, and so `not_checked`.
+const risk = getRiskLevel(matches.length, tokenize(normalizeText(text)).length);
 console.log(risk.level, '-', risk.description);
 // suspicious - Suspicious - density 214.29/1000 words across 3 matches
 ```
@@ -88,7 +89,7 @@ console.log(risk.level, '-', risk.description);
 | `getRiskLevel` | `(matchCount, wordCount?) => { level, description }` | Rates the whole document from the match count and the match density. A `wordCount` of 0 or less gives `not_checked`. |
 | `dictionaryCoverage` | `(phrases: TorturedPhrase[]) => DictionaryCoverage` | Counts what the scanner can and cannot see of a dictionary, so "N phrases checked" is measured rather than read from `totalPhrases`. |
 | `normalizeWithMap` | `(text) => { normalized, map }` | The normalisation behind `normalizeText`, plus `map`: for each character of `normalized`, the index of the character of `text` it came from (`map[normalized.length] === text.length`). |
-| `normalizeText` | `(text) => string` | Applies Unicode compatibility form (PDF ligatures such as `ﬁ` become `fi`), lower-cases, straightens curly quotes and apostrophes to `'` and `"`, turns every Unicode dash and hyphen into `-`, collapses whitespace (line breaks and non-breaking spaces included) and trims. |
+| `normalizeText` | `(text) => string` | Applies Unicode compatibility decomposition (PDF ligatures such as `ﬁ` become `fi`) and removes accents and other combining marks, so a precomposed and a decomposed `é` both read `e`; drops soft hyphens and zero-width characters; lower-cases, straightens curly quotes and apostrophes to `'` and `"`, turns every Unicode dash and hyphen into `-`, collapses whitespace (line breaks and non-breaking spaces included) and trims. |
 | `tokenize` | `(text) => { word, offset }[]` | Returns the words: runs of letters or digits, with internal apostrophes allowed (`dulbecco's`). Hyphens, slashes, commas and brackets separate words, so `man-made`, `man made` and `man‐made` read the same. Use it on normalized text. |
 
 ### Types
@@ -135,13 +136,14 @@ matching index), for example a newer PPS export.
 | `skippedSingleWord` | Entries of one word, not indexed (too common to flag). Empty for the bundled dictionary. |
 | `unmatchable` | Entries in which no word survives tokenisation. Empty for the bundled dictionary. |
 | `whitelisted` | Indexed entries suppressed on purpose (see Whitelist). 6 in the bundled dictionary. |
+| `duplicates` | Entries that read exactly like an earlier entry (same words, same separators), so only the earlier entry and its correction can ever be reported. |
 
 **`FirstWordEntry`**, the value type of the index. It is not exported by name:
 
 | Field | Meaning |
 |---|---|
 | `words` | The phrase's words after normalization. |
-| `gaps` | What separates consecutive words in the entry, with spaces and hyphens removed: `''` for `fluffy logic` or `man-made`, `,` for `accuracy, review`, `(` for `intelligence (ai)`. |
+| `gaps` | What separates consecutive words in the entry, with spaces, hyphens and quotation marks removed: `''` for `fluffy logic` or `man-made`, `,` for `accuracy, review`, `(` for `intelligence (ai)`. |
 | `wordCount` | The number of words. |
 | `correct` | The expression the phrase replaces. |
 | `original` | The `tortured` string as written in the dictionary. |
@@ -181,10 +183,14 @@ phrases.
 - **Word boundaries.** A phrase may not start inside a hyphenated compound
   (`self-regulated learning` does not match the entry `regulated learning`), and what
   separates its words in the text must be what separates them in the entry, where a
-  space, a line break and a hyphen count as the same (`fluffy-logic` matches
-  `fluffy logic`; `fluffy. Logic`, `fluffy/logic` and `fluffy (logic` do not).
+  space, a line break, a hyphen and a quotation mark count as the same (`fluffy-logic`
+  and `fluffy "logic"` match `fluffy logic`; `fluffy. Logic`, `fluffy/logic` and
+  `fluffy (logic` do not). Only a true hyphen makes a compound: after an en or em dash
+  (`AI—fluffy logic`) the phrase is matched.
 - **Whole words only.** Matching compares complete tokens. Inflected forms are not matched
-  unless the dictionary lists them.
+  unless the dictionary lists them. One exception, for the last word of a phrase only: a
+  footnote number glued on by text extraction (`consciousness12`, `consciousness¹`) or a
+  possessive (`brainpower's`) is allowed, and the match ends where the entry's word ends.
 
 ## Limitations and failure modes
 
@@ -202,8 +208,12 @@ phrases.
   are not a validated classifier.
 - **A match is not proof of misconduct.** Legitimate but unusual phrasing, and phrasing
   from translated text, can match. Review each hit in context.
+- **Quotation marks do not separate a phrase.** `computer-based "intelligence test"`
+  matches the entry `computer-based intelligence`, as in 0.1.3, because a phrase that an
+  author puts in quotation marks (`counterfeit "consciousness"`) must still be found.
 - **The input must be plain text.** Extracting text from a PDF or DOCX is up to you.
-  Hyphenation and line-break artefacts can split phrases.
+  Hyphenation and line-break artefacts can split phrases: a word broken across a line
+  with a hyphen (`counter-` / `feit`) reads as two words and is not matched.
 
 ## Development
 

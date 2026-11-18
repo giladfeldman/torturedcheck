@@ -50,16 +50,25 @@ interface FirstWordEntry {
   original: string;
 }
 
-const APOSTROPHES = /[\u2018\u2019\u201A\u201B\u02BC\u2032]/;
+const APOSTROPHES = /[\u2018\u2019\u201A\u201B\u02BC\u2032`\u00B4]/;
+// True hyphens join a compound ("self-regulated"); an en or em dash is punctuation
+// ("AI\u2014fuzzy logic") even though both are read as "-" for matching.
+const COMPOUND_HYPHEN = /[-\u2010\u2011]/;
+// Characters extraction leaves inside words that nobody sees: soft hyphen, zero-width
+// space / joiners, word joiner, byte-order mark. They are dropped, never read as a break.
+const INVISIBLE = /[\u00AD\u200B\u200C\u200D\u2060\uFEFF]/;
 const QUOTES = /[\u201C\u201D\u201E\u201F]/;
 const DASHES = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/;
 
 /**
  * Normalise text for matching and keep, for every character of the result, the index of
  * the character of `text` it came from (`map[i]`; `map[result.length] = text.length`).
- * Per character: Unicode compatibility form (PDF ligatures "\uFB01" -> "fi", full-width
- * forms), lower case, curly quotes and apostrophes to straight, every Unicode dash and
- * hyphen to "-", whitespace runs to one space, leading and trailing whitespace dropped.
+ * Per character: Unicode compatibility decomposition (PDF ligatures "\uFB01" -> "fi",
+ * full-width forms) with accents and other combining marks removed, so precomposed and
+ * decomposed text read the same ("e\u0301" = "\u00E9" = "e"); lower case; curly quotes and
+ * apostrophes to straight; every Unicode dash and hyphen to "-"; soft hyphens and
+ * zero-width characters dropped; whitespace runs to one space, leading and trailing
+ * whitespace dropped.
  */
 export function normalizeWithMap(text: string): { normalized: string; map: number[] } {
   let out = '';
@@ -73,7 +82,8 @@ export function normalizeWithMap(text: string): { normalized: string; map: numbe
       if (out.length > 0 && pendingSpace < 0) pendingSpace = at;
       continue;
     }
-    let piece = ch.normalize('NFKC').toLowerCase();
+    if (INVISIBLE.test(ch)) continue;
+    let piece = ch.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
     if (APOSTROPHES.test(piece)) piece = "'";
     else if (QUOTES.test(piece)) piece = '"';
     else if (DASHES.test(piece)) piece = '-';
@@ -124,7 +134,9 @@ function entryWords(tortured: string): string[] {
 
 /** Canonical separator between two words: spaces and hyphens are equivalent and vanish. */
 function gapKey(between: string): string {
-  return between.replace(/[\s-]+/g, '');
+  // Spaces, hyphens and quotation marks are not separators that change a phrase:
+  // counterfeit "consciousness" is the entry "counterfeit consciousness".
+  return between.replace(/[\s\-'"]+/g, '');
 }
 
 /** Separators between the words of one entry, read exactly as text gaps are read. */
@@ -143,8 +155,22 @@ function entryGaps(tortured: string): string[] {
  * "chi-square"): a phrase may not start inside a compound, or "self-regulated learning"
  * would read as the entry "regulated learning" (found by the 2026-11-18 corpus diff).
  */
-function startsInsideCompound(normalized: string, offset: number): boolean {
-  return offset >= 2 && normalized[offset - 1] === '-' && /[\p{L}\p{N}]/u.test(normalized[offset - 2]);
+function startsInsideCompound(normalized: string, map: number[], text: string, offset: number): boolean {
+  return offset >= 2 && normalized[offset - 1] === '-' && /[\p{L}\p{N}]/u.test(normalized[offset - 2]) &&
+    COMPOUND_HYPHEN.test(text[map[offset - 1]] ?? '');
+}
+
+/**
+ * How many characters of a text word the entry word covers, or -1. Equal words match in
+ * full. The LAST word of a phrase may also carry a footnote number glued on by extraction
+ * ("consciousness12", "consciousness\u00B9") or a possessive ("brainpower's"); the match then
+ * ends where the entry word ends.
+ */
+function wordMatch(textWord: string, entryWord: string, last: boolean): number {
+  if (textWord === entryWord) return textWord.length;
+  if (!last || entryWord.length < 3 || !textWord.startsWith(entryWord) || !/\p{L}$/u.test(entryWord)) return -1;
+  const rest = textWord.slice(entryWord.length);
+  return /^(?:\p{N}+|'s?)$/u.test(rest) ? entryWord.length : -1;
 }
 
 /**
@@ -341,6 +367,11 @@ export interface DictionaryCoverage {
   unmatchable: string[];
   /** Indexed entries suppressed on purpose as ordinary academic prose. */
   whitelisted: string[];
+  /**
+   * Entries that read exactly like an earlier entry (same words, same separators), so the
+   * scanner can only ever report the earlier one and its correction.
+   */
+  duplicates: string[];
 }
 
 /**
@@ -348,7 +379,8 @@ export interface DictionaryCoverage {
  * a measured number rather than the dictionary's `totalPhrases` (class sweep 2026-11-18).
  */
 export function dictionaryCoverage(phrases: TorturedPhrase[]): DictionaryCoverage {
-  const cov: DictionaryCoverage = { total: phrases.length, indexed: 0, skippedSingleWord: [], unmatchable: [], whitelisted: [] };
+  const cov: DictionaryCoverage = { total: phrases.length, indexed: 0, skippedSingleWord: [], unmatchable: [], whitelisted: [], duplicates: [] };
+  const seen = new Set<string>();
   for (const p of phrases) {
     const words = entryWords(p.tortured);
     if (words.length === 0) cov.unmatchable.push(p.tortured);
@@ -356,6 +388,9 @@ export function dictionaryCoverage(phrases: TorturedPhrase[]): DictionaryCoverag
     else {
       cov.indexed++;
       if (isWhitelisted(words)) cov.whitelisted.push(p.tortured);
+      const key = `${words.join(' ')}|${entryGaps(p.tortured).join('|')}`;
+      if (seen.has(key)) cov.duplicates.push(p.tortured);
+      seen.add(key);
     }
   }
   return cov;
@@ -386,11 +421,14 @@ export function scanForTorturedPhrases(
       if (i + candidate.wordCount > tokens.length) continue;
 
       let allMatch = true;
+      let lastLength = 0;
       for (let j = 0; j < candidate.wordCount; j++) {
-        if (tokens[i + j].word !== candidate.words[j]) {
+        const n = wordMatch(tokens[i + j].word, candidate.words[j], j === candidate.wordCount - 1);
+        if (n < 0) {
           allMatch = false;
           break;
         }
+        lastLength = n;
       }
 
       if (!allMatch) continue;
@@ -399,7 +437,7 @@ export function scanForTorturedPhrases(
       // hyphenated compound, and what separates its words in the text must be what
       // separates them in the entry (a space and a hyphen are the same; a full stop,
       // slash or bracket the entry lacks is not).
-      if (startsInsideCompound(normalized, token.offset)) continue;
+      if (startsInsideCompound(normalized, map, text, token.offset)) continue;
       let gapsMatch = true;
       for (let j = 1; j < candidate.wordCount; j++) {
         const prev = tokens[i + j - 1];
@@ -408,12 +446,16 @@ export function scanForTorturedPhrases(
       }
       if (!gapsMatch) continue;
 
-      // Skip whitelisted phrases (PU9)
-      if (isWhitelisted(candidate.words)) continue;
-
       const startOffset = tokens[i].offset;
       const lastToken = tokens[i + candidate.wordCount - 1];
-      const endOffset = lastToken.offset + lastToken.word.length;
+      const endOffset = lastToken.offset + lastLength;
+
+      // Skip whitelisted phrases (PU9). The span is covered, so a shorter entry with the
+      // same first word cannot report part of a whitelisted phrase.
+      if (isWhitelisted(candidate.words)) {
+        coveredRanges.push({ start: startOffset, end: endOffset });
+        break;
+      }
 
       const overlaps = coveredRanges.some(
         r => startOffset < r.end && endOffset > r.start
@@ -425,8 +467,11 @@ export function scanForTorturedPhrases(
       const lastSrc = map[endOffset - 1];
       const origStart = map[startOffset];
       const origEnd = lastSrc + ((text.codePointAt(lastSrc) ?? 0) > 0xffff ? 2 : 1);
-      const ctxStart = Math.max(0, origStart - 80);
-      const ctxEnd = Math.min(text.length, origEnd + 80);
+      let ctxStart = Math.max(0, origStart - 80);
+      let ctxEnd = Math.min(text.length, origEnd + 80);
+      // Never cut a surrogate pair in half at either end of the context.
+      if (ctxStart > 0 && /[\uDC00-\uDFFF]/.test(text[ctxStart])) ctxStart--;
+      if (ctxEnd < text.length && /[\uDC00-\uDFFF]/.test(text[ctxEnd])) ctxEnd++;
       const context =
         (ctxStart > 0 ? '...' : '') +
         text.slice(ctxStart, ctxEnd).replace(/\s+/g, ' ') +
@@ -483,7 +528,8 @@ export function getRiskLevel(
 ): { level: string; description: string } {
   // Nothing to scan is not a clean result (class sweep 2026-11-18): a caller that passes
   // wordCount 0 (empty or non-text extraction) gets 'not_checked', never 'clean'.
-  if (wordCount !== undefined && wordCount <= 0) {
+  // NaN (a failed count) is treated the same way.
+  if (wordCount !== undefined && !(wordCount > 0)) {
     return { level: 'not_checked', description: 'No scannable words: nothing was checked' };
   }
   if (matchCount === 0) return { level: 'clean', description: 'No tortured phrases detected' };

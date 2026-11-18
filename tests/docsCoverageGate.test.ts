@@ -32,7 +32,7 @@ test('the surface is derived from the source, not empty (known-positive control)
   expect(surface.member.has('context')).toBe(true);
   expect(surface.member.has('wordCount')).toBe(true); // non-exported FirstWordEntry, reached via the index type
   expect(surface.parameter.has('firstWordIndex')).toBe(true);
-  expect([...surface['returned value']].sort()).toEqual(['clean', 'high', 'low', 'suspicious']);
+  expect([...surface['returned value']].sort()).toEqual(['clean', 'high', 'low', 'not_checked', 'suspicious']);
   expect(surface['data file'].has('tortured-phrases.json')).toBe(true);
   expect(surface.export.size).toBeGreaterThanOrEqual(9);
 });

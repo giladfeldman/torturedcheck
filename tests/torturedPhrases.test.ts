@@ -75,10 +75,15 @@ describe('tokenize', () => {
     ]);
   });
 
-  it('should handle hyphenated words', () => {
-    const tokens = tokenize("self-organizing");
-    expect(tokens.length).toBe(1);
-    expect(tokens[0].word).toBe('self-organizing');
+  it('splits hyphenated words, so "self-organizing" reads like "self organizing"', () => {
+    // Changed deliberately in the 2026-11-18 class sweep: a hyphen is a word separator in
+    // both the dictionary and the text, so hyphenated, spaced and Unicode-hyphen forms of
+    // one phrase give one reading (tests/parityMatrix.test.ts).
+    expect(tokenize('self-organizing')).toEqual([
+      { word: 'self', offset: 0 },
+      { word: 'organizing', offset: 5 },
+    ]);
+    expect(tokenize('self-organizing').map(t => t.word)).toEqual(tokenize('self organizing').map(t => t.word));
   });
 
   it('should handle empty text', () => {

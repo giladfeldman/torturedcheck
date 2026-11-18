@@ -39,7 +39,7 @@ Pin a tag:
 ```jsonc
 // package.json
 "dependencies": {
-  "torturedcheck": "github:giladfeldman/torturedcheck#v0.1.3"
+  "torturedcheck": "github:giladfeldman/torturedcheck#v0.2.0"
 }
 ```
 
@@ -67,10 +67,11 @@ const dictionary = loadDictionary();                     // bundled PPS list (ca
 const index = buildFirstWordIndex(dictionary.phrases);   // build once, reuse across texts
 const matches = scanForTorturedPhrases(text, dictionary, index);
 
-for (const m of matches) console.log(`${m.tortured} -> ${m.correct} @${m.offset}+${m.length}`);
-// counterfeit consciousness -> artificial intelligence @4+25
-// kidney disappointment -> kidney failure @48+21
-// surface region -> surface area @80+14
+for (const m of matches) console.log(`${m.tortured} -> ${m.correct} @${m.offset}+${m.length} "${m.matchedText}"`);
+// counterfeit consciousness -> artificial intelligence @4+25 "counterfeit consciousness"
+// kidney disappointment -> kidney failure @48+21 "kidney disappointment"
+// surface region -> surface area @82+14 "Surface Region"
+// (offsets are in `text` as passed in: text.slice(82, 96) === 'Surface Region')
 
 const risk = getRiskLevel(matches.length, text.split(/\s+/).length);
 console.log(risk.level, '-', risk.description);
@@ -82,11 +83,13 @@ console.log(risk.level, '-', risk.description);
 | Export | Signature | Does |
 |---|---|---|
 | `loadDictionary` | `() => TorturedPhrasesDictionary` | Reads the bundled `dist/data/tortured-phrases.json` and caches it for the life of the process. |
-| `buildFirstWordIndex` | `(phrases: TorturedPhrase[]) => Map<string, FirstWordEntry[]>` | Indexes the phrases by their first word. Phrases with fewer than two words are skipped, and longer phrases are tried first. |
+| `buildFirstWordIndex` | `(phrases: TorturedPhrase[]) => Map<string, FirstWordEntry[]>` | Indexes the phrases by their first word, reading each entry with the same `normalizeText` + `tokenize` as the text. Phrases with fewer than two words are skipped, and longer phrases are tried first. |
 | `scanForTorturedPhrases` | `(text, dictionary, firstWordIndex?) => TorturedPhraseMatch[]` | Runs the detection. If `firstWordIndex` is omitted, the index is rebuilt from `dictionary.phrases` on every call, so pass a prebuilt index when you scan many texts. |
-| `getRiskLevel` | `(matchCount, wordCount?) => { level, description }` | Rates the whole document from the match count and the match density. |
-| `normalizeText` | `(text) => string` | Lower-cases the text, straightens curly quotes to `'` and `"`, turns en and em dashes into `-`, collapses whitespace and trims. |
-| `tokenize` | `(text) => { word, offset }[]` | Returns the words matching `[a-z]+` (hyphen- or apostrophe-joined parts are allowed), with their character offsets. Use it on normalized text. |
+| `getRiskLevel` | `(matchCount, wordCount?) => { level, description }` | Rates the whole document from the match count and the match density. A `wordCount` of 0 or less gives `not_checked`. |
+| `dictionaryCoverage` | `(phrases: TorturedPhrase[]) => DictionaryCoverage` | Counts what the scanner can and cannot see of a dictionary, so "N phrases checked" is measured rather than read from `totalPhrases`. |
+| `normalizeWithMap` | `(text) => { normalized, map }` | The normalisation behind `normalizeText`, plus `map`: for each character of `normalized`, the index of the character of `text` it came from (`map[normalized.length] === text.length`). |
+| `normalizeText` | `(text) => string` | Applies Unicode compatibility form (PDF ligatures such as `ﬁ` become `fi`), lower-cases, straightens curly quotes and apostrophes to `'` and `"`, turns every Unicode dash and hyphen into `-`, collapses whitespace (line breaks and non-breaking spaces included) and trims. |
+| `tokenize` | `(text) => { word, offset }[]` | Returns the words: runs of letters or digits, with internal apostrophes allowed (`dulbecco's`). Hyphens, slashes, commas and brackets separate words, so `man-made`, `man made` and `man‐made` read the same. Use it on normalized text. |
 
 ### Types
 
@@ -118,33 +121,46 @@ matching index), for example a newer PPS export.
 |---|---|
 | `tortured` | The dictionary entry as written in the dictionary. |
 | `correct` | The expression it replaces. |
-| `offset` | The start position **in the normalized text** (`normalizeText(text)`), not in your original string. |
-| `length` | The length of the match in the normalized text. |
-| `context` | Up to 80 characters of normalized text on each side of the match. `...` marks where the text was cut. |
+| `offset` | The start position in the text you passed in: `text.slice(offset, offset + length)` is the phrase as written. (Before 0.2.0 this was a position in the normalized text, off by every collapsed whitespace run and ligature before the match.) |
+| `length` | The length of the match in the text you passed in. |
+| `matchedText` | The matched phrase exactly as written in the text you passed in. |
+| `context` | Up to 80 characters of your text on each side of the match, whitespace collapsed. `...` marks where the text was cut. |
+
+**`DictionaryCoverage`**, returned by `dictionaryCoverage`:
+
+| Field | Meaning |
+|---|---|
+| `total` | Entries in the dictionary. |
+| `indexed` | Multi-word entries the scanner can match. |
+| `skippedSingleWord` | Entries of one word, not indexed (too common to flag). Empty for the bundled dictionary. |
+| `unmatchable` | Entries in which no word survives tokenisation. Empty for the bundled dictionary. |
+| `whitelisted` | Indexed entries suppressed on purpose (see Whitelist). 6 in the bundled dictionary. |
 
 **`FirstWordEntry`**, the value type of the index. It is not exported by name:
 
 | Field | Meaning |
 |---|---|
 | `words` | The phrase's words after normalization. |
+| `gaps` | What separates consecutive words in the entry, with spaces and hyphens removed: `''` for `fluffy logic` or `man-made`, `,` for `accuracy, review`, `(` for `intelligence (ai)`. |
 | `wordCount` | The number of words. |
 | `correct` | The expression the phrase replaces. |
 | `original` | The `tortured` string as written in the dictionary. |
 
 ### `getRiskLevel(matchCount, wordCount?)`
 
-`level` is one of `clean`, `low`, `suspicious` or `high`. `description` is a
+`level` is one of `not_checked`, `clean`, `low`, `suspicious` or `high`. `description` is a
 human-readable reason that includes the density.
 
 | Condition | `level` |
 |---|---|
+| `wordCount` is given and is 0 or less (nothing to scan) | `not_checked` |
 | `matchCount` is 0 | `clean` |
 | density < 0.3 per 1,000 words | `low`, whatever the count |
 | density ≥ 1.2 per 1,000 words **and** `matchCount` ≥ 6 | `high` |
 | density ≥ 0.6 per 1,000 words **and** `matchCount` ≥ 3 | `suspicious` |
 | anything else | `low` |
 
-When `wordCount` is omitted or 0, only the count is used: 1–3 matches is `low`, 4–8 is
+When `wordCount` is omitted, only the count is used: 1–3 matches is `low`, 4–8 is
 `suspicious`, and 9 or more is `high`. Pass `wordCount` whenever you can, because long
 papers collect incidental matches.
 
@@ -162,6 +178,11 @@ phrases.
   organization`, `feedback processing`, `facial expression processing` and `malignant
   growth`. The list is fixed in the source (`PHRASE_WHITELIST` in
   `src/torturedPhrasesDetection.ts`) and cannot be changed at runtime.
+- **Word boundaries.** A phrase may not start inside a hyphenated compound
+  (`self-regulated learning` does not match the entry `regulated learning`), and what
+  separates its words in the text must be what separates them in the entry, where a
+  space, a line break and a hyphen count as the same (`fluffy-logic` matches
+  `fluffy logic`; `fluffy. Logic`, `fluffy/logic` and `fluffy (logic` do not).
 - **Whole words only.** Matching compares complete tokens. Inflected forms are not matched
   unless the dictionary lists them.
 
@@ -169,12 +190,13 @@ phrases.
 
 - **Recall is limited to the dictionary.** The scan finds only phrases in the bundled
   snapshot. New paraphrases, or inflected forms the snapshot does not list, are not found.
-- **Some entries can never match.** 7 of the 7,942 entries are not indexed because one of
-  their two words is a number (for example `walk 2020`). Another 15 can never match,
-  because a word contains a digit, `/` or `(` that the tokenizer does not produce (for
-  example `f1-score`). So 7,920 entries are effectively searchable.
-- **Offsets refer to the normalized text.** To highlight a match in your original
-  document, re-locate it with `context` or map the offsets back yourself.
+- **Every entry is searchable.** Since 0.2.0 the dictionary and the text are read by the
+  same tokenizer, so all 7,942 entries are indexed and each is found in a sentence of its
+  own, except the 6 that are whitelisted on purpose (`tests/parityMatrix.test.ts`). Before,
+  entries with a number as a word (`walk 2020`), a digit, `/` or brackets inside a word
+  (`f1-score`), or a hyphen written as a space or a Unicode hyphen were missed, and an
+  entry such as `1/3-birthday party` was cut down to `birthday party` and matched
+  ordinary prose.
 - **The risk levels are heuristics.** The `getRiskLevel` thresholds are set by hand
   (the reasoning is in the source comments) and depend on the word count you pass. They
   are not a validated classifier.
@@ -223,6 +245,6 @@ Versions released before 2026-11-06 were licensed under MIT and remain available
 
 **How to cite.** If you use this software in research, please cite it. GitHub's *Cite this repository* button (from [CITATION.cff](CITATION.cff)) gives APA and BibTeX. In APA style:
 
-> Feldman, G. (2026). *torturedcheck: tortured-phrase detection for academic documents* (Version 0.1.3) [Computer software]. https://github.com/giladfeldman/torturedcheck#readme
+> Feldman, G. (2026). *torturedcheck: tortured-phrase detection for academic documents* (Version 0.2.0) [Computer software]. https://github.com/giladfeldman/torturedcheck#readme
 
 <!-- license-citation:end -->

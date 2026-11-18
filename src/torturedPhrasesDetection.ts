@@ -19,44 +19,132 @@ export interface TorturedPhrasesDictionary {
 }
 
 export interface TorturedPhraseMatch {
+  /** The dictionary entry that matched. */
   tortured: string;
   correct: string;
+  /**
+   * Position of the match in the text the CALLER passed in (not in the normalised text):
+   * `text.slice(offset, offset + length)` is the phrase as written. Before the 2026-11-18
+   * class sweep these were offsets into the normalised text, so they drifted by every
+   * collapsed whitespace run and every ligature before the match.
+   */
   offset: number;
   length: number;
+  /** The matched phrase exactly as written in the caller's text. */
+  matchedText: string;
+  /** About 80 characters either side of the match, from the caller's text, whitespace collapsed. */
   context: string;
 }
 
 interface FirstWordEntry {
   words: string[];
+  /**
+   * What separates consecutive words in the entry, canonicalised by `gapKey` ('' for a
+   * space or hyphen, ',' for "accuracy, review", '(' for "intelligence (ai)"). The text
+   * between matched words must have the same key, so a match never runs across a full
+   * stop, a slash or a bracket that the entry does not have.
+   */
+  gaps: string[];
   wordCount: number;
   correct: string;
   original: string;
 }
 
+const APOSTROPHES = /[\u2018\u2019\u201A\u201B\u02BC\u2032]/;
+const QUOTES = /[\u201C\u201D\u201E\u201F]/;
+const DASHES = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/;
+
 /**
- * Normalize text for matching: lowercase, collapse whitespace, normalize unicode
+ * Normalise text for matching and keep, for every character of the result, the index of
+ * the character of `text` it came from (`map[i]`; `map[result.length] = text.length`).
+ * Per character: Unicode compatibility form (PDF ligatures "\uFB01" -> "fi", full-width
+ * forms), lower case, curly quotes and apostrophes to straight, every Unicode dash and
+ * hyphen to "-", whitespace runs to one space, leading and trailing whitespace dropped.
  */
-export function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-    .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
-    .replace(/[\u2013\u2014\u2015]/g, '-')
-    .replace(/\s+/g, ' ')
-    .trim();
+export function normalizeWithMap(text: string): { normalized: string; map: number[] } {
+  let out = '';
+  const map: number[] = [];
+  let pendingSpace = -1;
+  let i = 0;
+  for (const ch of text ?? '') {
+    const at = i;
+    i += ch.length;
+    if (/\s/.test(ch)) {
+      if (out.length > 0 && pendingSpace < 0) pendingSpace = at;
+      continue;
+    }
+    let piece = ch.normalize('NFKC').toLowerCase();
+    if (APOSTROPHES.test(piece)) piece = "'";
+    else if (QUOTES.test(piece)) piece = '"';
+    else if (DASHES.test(piece)) piece = '-';
+    if (piece.length === 0) continue;
+    if (pendingSpace >= 0) {
+      out += ' ';
+      map.push(pendingSpace);
+      pendingSpace = -1;
+    }
+    for (let k = 0; k < piece.length; k++) map.push(at);
+    out += piece;
+  }
+  map.push(text?.length ?? 0);
+  return { normalized: out, map };
 }
 
 /**
- * Tokenize text into words with character offsets (operates on normalized text)
+ * Normalize text for matching: Unicode compatibility form (ligatures), lowercase, straight
+ * quotes, one hyphen, collapsed whitespace. Same reading as `normalizeWithMap`.
+ */
+export function normalizeText(text: string): string {
+  return normalizeWithMap(text).normalized;
+}
+
+/**
+ * Tokenize normalized text into words with character offsets. A word is a run of letters
+ * or digits, with internal apostrophes ("dulbecco's"). Hyphens, slashes, commas and
+ * brackets separate words, so "man-made", "man made" and "man\u2010made" read the same,
+ * and "f1-score" or "acid/base" tokenise identically in the dictionary and in the text.
+ * The dictionary is tokenised with this same function (class sweep 2026-11-18): before,
+ * letters-only text tokens could never match dictionary entries containing digits,
+ * slashes or brackets, and hyphenated entries missed their spaced and Unicode-hyphen forms.
  */
 export function tokenize(text: string): Array<{ word: string; offset: number }> {
   const tokens: Array<{ word: string; offset: number }> = [];
-  const regex = /[a-z]+(?:[-'][a-z]+)*/g;
+  const regex = /[\p{L}\p{N}]+(?:'[\p{L}\p{N}]+)*/gu;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
     tokens.push({ word: match[0], offset: match.index });
   }
   return tokens;
+}
+
+/** Words of one dictionary entry, read exactly as text is read. */
+function entryWords(tortured: string): string[] {
+  return tokenize(normalizeText(tortured)).map(t => t.word);
+}
+
+/** Canonical separator between two words: spaces and hyphens are equivalent and vanish. */
+function gapKey(between: string): string {
+  return between.replace(/[\s-]+/g, '');
+}
+
+/** Separators between the words of one entry, read exactly as text gaps are read. */
+function entryGaps(tortured: string): string[] {
+  const norm = normalizeText(tortured);
+  const toks = tokenize(norm);
+  const gaps: string[] = [];
+  for (let k = 1; k < toks.length; k++) {
+    gaps.push(gapKey(norm.slice(toks[k - 1].offset + toks[k - 1].word.length, toks[k].offset)));
+  }
+  return gaps;
+}
+
+/**
+ * True when the token at `offset` continues a hyphenated compound ("self-regulated",
+ * "chi-square"): a phrase may not start inside a compound, or "self-regulated learning"
+ * would read as the entry "regulated learning" (found by the 2026-11-18 corpus diff).
+ */
+function startsInsideCompound(normalized: string, offset: number): boolean {
+  return offset >= 2 && normalized[offset - 1] === '-' && /[\p{L}\p{N}]/u.test(normalized[offset - 2]);
 }
 
 /**
@@ -72,16 +160,13 @@ export function buildFirstWordIndex(phrases: TorturedPhrase[]): Map<string, Firs
   const index = new Map<string, FirstWordEntry[]>();
 
   for (const phrase of phrases) {
-    const normalized = normalizeText(phrase.tortured);
-    const words = normalized.split(/\s+/).filter(w => /[a-z]/.test(w));
-    if (words.length < 2) continue;
-
-    const cleanWords = words.map(w => w.replace(/^[^a-z]+|[^a-z]+$/g, ''));
+    const cleanWords = entryWords(phrase.tortured);
+    if (cleanWords.length < 2) continue; // counted by dictionaryCoverage
     const firstWord = cleanWords[0];
-    if (!firstWord) continue;
 
     const entry: FirstWordEntry = {
       words: cleanWords,
+      gaps: entryGaps(phrase.tortured),
       wordCount: cleanWords.length,
       correct: phrase.correct,
       original: phrase.tortured,
@@ -241,15 +326,51 @@ const PHRASE_WHITELIST = new Set([
   'malignant growth',             // PPS "correct": cancer — standard oncology / pathology English
 ]);
 
+function isWhitelisted(words: string[]): boolean {
+  return PHRASE_WHITELIST.has(words.join(' '));
+}
+
+/** What the scanner can and cannot see of a dictionary. */
+export interface DictionaryCoverage {
+  total: number;
+  /** Entries in the first-word index (multi-word, matchable). */
+  indexed: number;
+  /** Entries dropped because they are a single word (too common to flag). */
+  skippedSingleWord: string[];
+  /** Entries that can never match text (no word survives tokenisation). Expected empty. */
+  unmatchable: string[];
+  /** Indexed entries suppressed on purpose as ordinary academic prose. */
+  whitelisted: string[];
+}
+
 /**
- * Scan normalized text for tortured phrases using first-word index lookup
+ * Count every dictionary entry the scanner drops or suppresses, so "N phrases checked" is
+ * a measured number rather than the dictionary's `totalPhrases` (class sweep 2026-11-18).
+ */
+export function dictionaryCoverage(phrases: TorturedPhrase[]): DictionaryCoverage {
+  const cov: DictionaryCoverage = { total: phrases.length, indexed: 0, skippedSingleWord: [], unmatchable: [], whitelisted: [] };
+  for (const p of phrases) {
+    const words = entryWords(p.tortured);
+    if (words.length === 0) cov.unmatchable.push(p.tortured);
+    else if (words.length < 2) cov.skippedSingleWord.push(p.tortured);
+    else {
+      cov.indexed++;
+      if (isWhitelisted(words)) cov.whitelisted.push(p.tortured);
+    }
+  }
+  return cov;
+}
+
+/**
+ * Scan text for tortured phrases using first-word index lookup. Offsets in the result
+ * refer to `text` as passed in.
  */
 export function scanForTorturedPhrases(
   text: string,
   dictionary: TorturedPhrasesDictionary,
   firstWordIndex?: Map<string, FirstWordEntry[]>
 ): TorturedPhraseMatch[] {
-  const normalized = normalizeText(text);
+  const { normalized, map } = normalizeWithMap(text);
   const tokens = tokenize(normalized);
   const index = firstWordIndex ?? buildFirstWordIndex(dictionary.phrases);
 
@@ -274,8 +395,21 @@ export function scanForTorturedPhrases(
 
       if (!allMatch) continue;
 
+      // Word boundaries (class sweep 2026-11-18): the phrase may not start inside a
+      // hyphenated compound, and what separates its words in the text must be what
+      // separates them in the entry (a space and a hyphen are the same; a full stop,
+      // slash or bracket the entry lacks is not).
+      if (startsInsideCompound(normalized, token.offset)) continue;
+      let gapsMatch = true;
+      for (let j = 1; j < candidate.wordCount; j++) {
+        const prev = tokens[i + j - 1];
+        const between = normalized.slice(prev.offset + prev.word.length, tokens[i + j].offset);
+        if (gapKey(between) !== candidate.gaps[j - 1]) { gapsMatch = false; break; }
+      }
+      if (!gapsMatch) continue;
+
       // Skip whitelisted phrases (PU9)
-      if (PHRASE_WHITELIST.has(candidate.words.join(' '))) continue;
+      if (isWhitelisted(candidate.words)) continue;
 
       const startOffset = tokens[i].offset;
       const lastToken = tokens[i + candidate.wordCount - 1];
@@ -286,18 +420,24 @@ export function scanForTorturedPhrases(
       );
       if (overlaps) continue;
 
-      const ctxStart = Math.max(0, startOffset - 80);
-      const ctxEnd = Math.min(normalized.length, endOffset + 80);
+      // Map back to the caller's text. The end maps through the last matched character
+      // (a ligature expands to two normalised characters that share one source index).
+      const lastSrc = map[endOffset - 1];
+      const origStart = map[startOffset];
+      const origEnd = lastSrc + ((text.codePointAt(lastSrc) ?? 0) > 0xffff ? 2 : 1);
+      const ctxStart = Math.max(0, origStart - 80);
+      const ctxEnd = Math.min(text.length, origEnd + 80);
       const context =
         (ctxStart > 0 ? '...' : '') +
-        normalized.slice(ctxStart, ctxEnd) +
-        (ctxEnd < normalized.length ? '...' : '');
+        text.slice(ctxStart, ctxEnd).replace(/\s+/g, ' ') +
+        (ctxEnd < text.length ? '...' : '');
 
       matches.push({
         tortured: candidate.original,
         correct: candidate.correct,
-        offset: startOffset,
-        length: endOffset - startOffset,
+        offset: origStart,
+        length: origEnd - origStart,
+        matchedText: text.slice(origStart, origEnd),
         context,
       });
 
@@ -341,10 +481,15 @@ export function getRiskLevel(
   matchCount: number,
   wordCount?: number,
 ): { level: string; description: string } {
+  // Nothing to scan is not a clean result (class sweep 2026-11-18): a caller that passes
+  // wordCount 0 (empty or non-text extraction) gets 'not_checked', never 'clean'.
+  if (wordCount !== undefined && wordCount <= 0) {
+    return { level: 'not_checked', description: 'No scannable words: nothing was checked' };
+  }
   if (matchCount === 0) return { level: 'clean', description: 'No tortured phrases detected' };
 
   // Legacy fallback when no wordCount available (more conservative than original)
-  if (!wordCount || wordCount <= 0) {
+  if (wordCount === undefined) {
     if (matchCount <= 3) return { level: 'low', description: 'Low concern - could be coincidental word choices' };
     if (matchCount <= 8) return { level: 'suspicious', description: 'Suspicious - multiple tortured phrases suggest machine paraphrasing' };
     return { level: 'high', description: 'High risk - likely paper mill or machine-paraphrased content' };

@@ -35,6 +35,18 @@ behaviour change. Each item below is pinned by `tests/parityMatrix.test.ts`, whi
   (`consciousness12`, `consciousness¹`) or a possessive (`brainpower's`). The glued-number, zero-width and
   quotation-mark shapes were read by 0.1.3 and lost in an earlier draft of this release.
 - `context` never cuts a surrogate pair (an emoji or mathematical letter) in half.
+- **Shapes found by a second review of those fixes** (each reproduced, then pinned by a test that failed
+  before the fix; 18 cells): an acute accent used as an apostrophe (`dulbecco´s`) read as a space;
+  left-to-right and right-to-left marks and other invisible format characters split a word or a gap
+  (a false clean); an accent written after the last letter fell outside the reported span; a phrase
+  was matched across a paragraph break, an em dash or a spaced en dash.
+- **A scan that could not run is no longer reported as clean.** `scanForTorturedPhrases` throws when
+  `text` is not a string or the dictionary has no phrases (it returned no matches), and
+  `getRiskLevel` gives `not_checked` for a match count that is NaN, infinite or negative (it gave
+  `high` or `low`). **Callers that passed an empty dictionary now get an error.**
+- The README's "How to cite" paragraph named version 0.1.2; it now points at the maintained citation.
+- Dependencies: `npm audit fix` (no vulnerabilities in what the package installs; 3 moderate ones remain
+  in development tools only).
 
 ### Added
 - `matchedText` on each match: the phrase exactly as written.
@@ -48,11 +60,11 @@ behaviour change. Each item below is pinned by `tests/parityMatrix.test.ts`, whi
 
 ### Corpus check
 Before/after scan of 8,773 full-text psychology articles (0.1.3 vs 0.2.0, same dictionary):
-- Matches 955 -> 867. Reported positions point at the phrase as written in 0 of 955 matches before and
-  867 of 867 after.
+- Matches 955 -> 861. Reported positions point at the phrase as written in 0 of 955 matches before and
+  861 of 861 after.
 - Dictionary entries the scanner can reach: 7,916 -> 7,936 of 7,942 multi-word entries (the 6 left are
   whitelisted on purpose).
-- Lost 116, all false matches in 0.1.3: entries whose digits or punctuation were stripped
+- Lost 122, all false matches in 0.1.3: entries whose digits or punctuation were stripped
   ("1/3-birthday party" read as "birthday party", 30; "center i7", 9; "preserved at 9.5", 9) and
   matches that crossed a comma, colon, bracket or slash ("education (16.8%), information",
   "green: money", "census.gov/.../education/data").
@@ -61,7 +73,11 @@ Before/after scan of 8,773 full-text psychology articles (0.1.3 vs 0.2.0, same d
   line break ("exchange / Work").
 - Kept as in 0.1.3: `computer-based "intelligence test"` still matches the entry `computer-based
   intelligence`, because quotation marks between words count as a space (see Limitations in the README).
-- Risk level changed for 106 articles.
+- Risk level changed for 110 articles.
+- The second-review fixes alone (measured against the build before them): 0 gained, 6 lost, all false
+  matches across a blank line: five read "P esteem" from an "ACCEPTED MANUSCRIPT" watermark printed
+  inside "self- ... esteem", one joined two table cells ("dispersed" / "age"). Risk level changed for 4
+  articles (each low -> clean).
 
 ## 0.1.3 — 2026-09-30
 

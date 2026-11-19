@@ -202,3 +202,55 @@ describe('torturedcheck: a phrase does not start inside a compound or cross punc
     expect(scanForTorturedPhrases(text, DICT, index)).toHaveLength(1);
   });
 });
+
+// Second-model review of the 293650d fixes (Sonnet, 2026-11-19), each reproduced before the
+// fix: an acute accent used as an apostrophe read as a space; bidi and other format
+// characters split a word or a gap; an accent on the last letter fell outside the span; a
+// match crossed a paragraph break or an em dash; NaN/negative counts and an empty
+// dictionary looked like a scan that found nothing.
+describe('torturedcheck: consult round 2 shapes', () => {
+  const index = buildFirstWordIndex(DICT.phrases);
+  const one: Array<[string, string, string]> = [
+    ['acute accent as apostrophe', 'dulbecco´s changed eagle´s medium was used', 'dulbecco´s changed eagle´s medium'],
+    ['left-to-right mark in gap', 'Our counterfeit‎ consciousness model', 'counterfeit‎ consciousness'],
+    ['right-to-left mark in word', 'Our counter‏feit consciousness model', 'counter‏feit consciousness'],
+    ['bidi isolate in gap', 'Our counterfeit ⁦consciousness⁩ model', 'counterfeit ⁦consciousness'],
+    ['accent on last letter', 'Our counterfeit consciousnesś model', 'counterfeit consciousnesś'],
+    ['spacing diaeresis inside word', 'Our counterfeit consciousn¨ess model', 'counterfeit consciousn¨ess'],
+    ['unspaced en dash as hyphen', 'Our man–made brainpower', 'man–made brainpower'],
+  ];
+  it.each(one)('%s: one match, span as written', (_l, text, span) => {
+    const r = scanForTorturedPhrases(text, DICT, index);
+    expect(r).toHaveLength(1);
+    expect(r[0].matchedText).toBe(span);
+    expect(text.slice(r[0].offset, r[0].offset + r[0].length)).toBe(span);
+  });
+  const none: Array<[string, string]> = [
+    ['paragraph break', 'It was fluffy\n\nLogic is next.'],
+    ['paragraph break with spaces', 'It was fluffy \n \n Logic is next.'],
+    ['em dash', 'It was fluffy—logic.'],
+    ['spaced em dash', 'It was fluffy — logic.'],
+    ['spaced en dash', 'It was fluffy – logic.'],
+    ['horizontal bar', 'It was fluffy―logic.'],
+  ];
+  it.each(none)('%s: no match', (_l, text) => {
+    expect(scanForTorturedPhrases(text, DICT, index)).toEqual([]);
+  });
+  it('a single line break still joins a phrase (wrapped line)', () => {
+    expect(scanForTorturedPhrases('It was fluffy\nlogic here.', DICT, index)).toHaveLength(1);
+  });
+  it.each([
+    ['NaN matches, no word count', NaN, undefined],
+    ['NaN matches with word count', NaN, 1000],
+    ['negative matches', -1, 1000],
+    ['infinite matches', Infinity, 1000],
+  ])('%s is not_checked', (_l, m, w) => {
+    expect(getRiskLevel(m as number, w as number | undefined).level).toBe('not_checked');
+  });
+  it('an empty dictionary throws instead of reporting no matches', () => {
+    expect(() => scanForTorturedPhrases('fluffy logic', { ...DICT, phrases: [] })).toThrow();
+  });
+  it('non-string text throws instead of reporting no matches', () => {
+    expect(() => scanForTorturedPhrases(null as unknown as string, DICT, index)).toThrow();
+  });
+});

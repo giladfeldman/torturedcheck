@@ -85,11 +85,11 @@ console.log(risk.level, '-', risk.description);
 |---|---|---|
 | `loadDictionary` | `() => TorturedPhrasesDictionary` | Reads the bundled `dist/data/tortured-phrases.json` and caches it for the life of the process. |
 | `buildFirstWordIndex` | `(phrases: TorturedPhrase[]) => Map<string, FirstWordEntry[]>` | Indexes the phrases by their first word, reading each entry with the same `normalizeText` + `tokenize` as the text. Phrases with fewer than two words are skipped, and longer phrases are tried first. |
-| `scanForTorturedPhrases` | `(text, dictionary, firstWordIndex?) => TorturedPhraseMatch[]` | Runs the detection. If `firstWordIndex` is omitted, the index is rebuilt from `dictionary.phrases` on every call, so pass a prebuilt index when you scan many texts. |
-| `getRiskLevel` | `(matchCount, wordCount?) => { level, description }` | Rates the whole document from the match count and the match density. A `wordCount` of 0 or less gives `not_checked`. |
+| `scanForTorturedPhrases` | `(text, dictionary, firstWordIndex?) => TorturedPhraseMatch[]` | Runs the detection. If `firstWordIndex` is omitted, the index is rebuilt from `dictionary.phrases` on every call, so pass a prebuilt index when you scan many texts. Throws if `text` is not a string or the dictionary has no phrases, so a scan that could not run never looks like a clean one. |
+| `getRiskLevel` | `(matchCount, wordCount?) => { level, description }` | Rates the whole document from the match count and the match density. A `wordCount` of 0 or less, or a `matchCount` that is not a finite number of 0 or more, gives `not_checked`. |
 | `dictionaryCoverage` | `(phrases: TorturedPhrase[]) => DictionaryCoverage` | Counts what the scanner can and cannot see of a dictionary, so "N phrases checked" is measured rather than read from `totalPhrases`. |
 | `normalizeWithMap` | `(text) => { normalized, map }` | The normalisation behind `normalizeText`, plus `map`: for each character of `normalized`, the index of the character of `text` it came from (`map[normalized.length] === text.length`). |
-| `normalizeText` | `(text) => string` | Applies Unicode compatibility decomposition (PDF ligatures such as `ﬁ` become `fi`) and removes accents and other combining marks, so a precomposed and a decomposed `é` both read `e`; drops soft hyphens and zero-width characters; lower-cases, straightens curly quotes and apostrophes to `'` and `"`, turns every Unicode dash and hyphen into `-`, collapses whitespace (line breaks and non-breaking spaces included) and trims. |
+| `normalizeText` | `(text) => string` | Applies Unicode compatibility decomposition (PDF ligatures such as `ﬁ` become `fi`) and removes accents and other combining marks, so a precomposed and a decomposed `é` both read `e`; drops soft hyphens, zero-width characters and every other invisible format character (left-to-right and right-to-left marks, bidi controls) and stray spacing accents (`¨`); lower-cases, straightens curly quotes and apostrophes to `'` and `"`, turns every Unicode dash and hyphen into `-`, collapses whitespace (line breaks and non-breaking spaces included) and trims. |
 | `tokenize` | `(text) => { word, offset }[]` | Returns the words: runs of letters or digits, with internal apostrophes allowed (`dulbecco's`). Hyphens, slashes, commas and brackets separate words, so `man-made`, `man made` and `man‐made` read the same. Use it on normalized text. |
 
 ### Types
@@ -156,6 +156,7 @@ human-readable reason that includes the density.
 | Condition | `level` |
 |---|---|
 | `wordCount` is given and is 0 or less (nothing to scan) | `not_checked` |
+| `matchCount` is NaN, infinite or negative (a failed scan) | `not_checked` |
 | `matchCount` is 0 | `clean` |
 | density < 0.3 per 1,000 words | `low`, whatever the count |
 | density ≥ 1.2 per 1,000 words **and** `matchCount` ≥ 6 | `high` |
@@ -214,6 +215,13 @@ phrases.
 - **The input must be plain text.** Extracting text from a PDF or DOCX is up to you.
   Hyphenation and line-break artefacts can split phrases: a word broken across a line
   with a hyphen (`counter-` / `feit`) reads as two words and is not matched.
+- **What separates a phrase.** A phrase is not matched across a blank line (a paragraph
+  break), an em dash, or an en dash or minus sign with a space beside it. A single line
+  break, a hyphen and an unspaced en dash (`man–made`) join words as a space does.
+- **Footnote numbers and possessives only on the last word.** `consciousness12` and
+  `brainpower's` at the end of a phrase are matched; a footnote number glued to an earlier
+  word (`counterfeit¹ consciousness`) is not. Any run of digits is accepted on the last
+  word, so a glued year (`consciousness2015`) also matches.
 
 ## Development
 
@@ -226,9 +234,8 @@ node scripts/check-docs-coverage.mjs   # documentation-drift gate: builds, runs 
 
 ## How to cite
 
-Please cite the software (see [CITATION.cff](CITATION.cff)): Feldman, G. (2026).
-*torturedcheck: tortured-phrase detection for academic documents* (Version 0.1.2)
-[Computer software]. https://github.com/giladfeldman/torturedcheck
+Please cite the software: the citation for the current version is in
+[License and citation](#license-and-citation) below and in [CITATION.cff](CITATION.cff).
 
 Please also cite the source of the dictionary: Cabanac, Labbé & Magazinov (2021),
 [10.48550/arXiv.2107.06751](https://doi.org/10.48550/arXiv.2107.06751).

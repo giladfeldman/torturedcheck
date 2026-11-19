@@ -56,7 +56,9 @@ const APOSTROPHES = /[\u2018\u2019\u201A\u201B\u02BC\u2032`\u00B4]/;
 const COMPOUND_HYPHEN = /[-\u2010\u2011]/;
 // Characters extraction leaves inside words that nobody sees: soft hyphen, zero-width
 // space / joiners, word joiner, byte-order mark. They are dropped, never read as a break.
-const INVISIBLE = /[\u00AD\u200B\u200C\u200D\u2060\uFEFF]/;
+// Every Unicode format character (\p{Cf}) is included: left-to-right and right-to-left
+// marks, bidi embeddings and isolates, invisible operators (consult round 2, 2026-11-19).
+const INVISIBLE = /[\u00AD\p{Cf}]/u;
 const QUOTES = /[\u201C\u201D\u201E\u201F]/;
 const DASHES = /[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/;
 
@@ -83,10 +85,22 @@ export function normalizeWithMap(text: string): { normalized: string; map: numbe
       continue;
     }
     if (INVISIBLE.test(ch)) continue;
-    let piece = ch.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
-    if (APOSTROPHES.test(piece)) piece = "'";
-    else if (QUOTES.test(piece)) piece = '"';
-    else if (DASHES.test(piece)) piece = '-';
+    // Apostrophe, quote and dash classes are tested on the character as written: the acute
+    // accent U+00B4 decomposes to a space plus a mark, so testing after decomposition read
+    // "dulbecco\u00B4s" as "dulbecco s" (consult round 2, 2026-11-19).
+    let piece: string;
+    if (APOSTROPHES.test(ch)) piece = "'";
+    else if (QUOTES.test(ch)) piece = '"';
+    else if (DASHES.test(ch)) piece = '-';
+    else {
+      piece = ch.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
+      if (APOSTROPHES.test(piece)) piece = "'";
+      else if (QUOTES.test(piece)) piece = '"';
+      else if (DASHES.test(piece)) piece = '-';
+      // A spacing diacritic ("\u00A8", "\u00AF", "\u02DC") decomposes to a space plus a
+      // mark; it is a stray accent glyph from extraction, never a word break.
+      else if (piece.trim().length === 0) piece = '';
+    }
     if (piece.length === 0) continue;
     if (pendingSpace >= 0) {
       out += ' ';
@@ -130,6 +144,18 @@ export function tokenize(text: string): Array<{ word: string; offset: number }> 
 /** Words of one dictionary entry, read exactly as text is read. */
 function entryWords(tortured: string): string[] {
   return tokenize(normalizeText(tortured)).map(t => t.word);
+}
+
+/**
+ * True when the text between two words, as WRITTEN, separates them even though it reads as
+ * a space or hyphen once normalised: a paragraph break (a blank line), an em dash or
+ * horizontal bar, or an en dash or minus sign with a space on either side (consult round 2,
+ * 2026-11-19). An unspaced en dash stays a hyphen (extraction often writes "man\u2013made"),
+ * and so does a spaced ASCII hyphen, which the dictionary itself uses ("pre- and post-handling").
+ */
+function gapSeparates(written: string): boolean {
+  return /\n[^\S\n]*\n/.test(written) || /[\u2014\u2015]/.test(written) ||
+    /\s[\u2012\u2013\u2212]|[\u2012\u2013\u2212]\s/.test(written);
 }
 
 /** Canonical separator between two words: spaces and hyphens are equivalent and vanish. */
@@ -405,6 +431,12 @@ export function scanForTorturedPhrases(
   dictionary: TorturedPhrasesDictionary,
   firstWordIndex?: Map<string, FirstWordEntry[]>
 ): TorturedPhraseMatch[] {
+  // "Could not check" must never look like "nothing found": a missing text or an empty
+  // dictionary throws instead of returning [] (consult round 2, 2026-11-19).
+  if (typeof text !== 'string') throw new TypeError('scanForTorturedPhrases: text must be a string');
+  if (!dictionary || !Array.isArray(dictionary.phrases) || dictionary.phrases.length === 0) {
+    throw new Error('scanForTorturedPhrases: the dictionary has no phrases, so nothing can be checked');
+  }
   const { normalized, map } = normalizeWithMap(text);
   const tokens = tokenize(normalized);
   const index = firstWordIndex ?? buildFirstWordIndex(dictionary.phrases);
@@ -443,6 +475,8 @@ export function scanForTorturedPhrases(
         const prev = tokens[i + j - 1];
         const between = normalized.slice(prev.offset + prev.word.length, tokens[i + j].offset);
         if (gapKey(between) !== candidate.gaps[j - 1]) { gapsMatch = false; break; }
+        const written = text.slice(map[prev.offset + prev.word.length - 1] + 1, map[tokens[i + j].offset]);
+        if (gapSeparates(written)) { gapsMatch = false; break; }
       }
       if (!gapsMatch) continue;
 
@@ -466,7 +500,13 @@ export function scanForTorturedPhrases(
       // (a ligature expands to two normalised characters that share one source index).
       const lastSrc = map[endOffset - 1];
       const origStart = map[startOffset];
-      const origEnd = lastSrc + ((text.codePointAt(lastSrc) ?? 0) > 0xffff ? 2 : 1);
+      let origEnd = lastSrc + ((text.codePointAt(lastSrc) ?? 0) > 0xffff ? 2 : 1);
+      // Combining marks written after the last letter belong to it ("s\u0301"): they were
+      // dropped from the normalised text, so the span is extended over them. Not when the
+      // match ends inside a longer word (a glued footnote number or possessive follows).
+      if (lastLength === lastToken.word.length) {
+        while (origEnd < text.length && /\p{M}/u.test(text[origEnd])) origEnd++;
+      }
       let ctxStart = Math.max(0, origStart - 80);
       let ctxEnd = Math.min(text.length, origEnd + 80);
       // Never cut a surrogate pair in half at either end of the context.
@@ -531,6 +571,10 @@ export function getRiskLevel(
   // NaN (a failed count) is treated the same way.
   if (wordCount !== undefined && !(wordCount > 0)) {
     return { level: 'not_checked', description: 'No scannable words: nothing was checked' };
+  }
+  // A match count that is not a finite non-negative number is a failed scan, not a result.
+  if (!Number.isFinite(matchCount) || matchCount < 0) {
+    return { level: 'not_checked', description: 'No valid match count: nothing was checked' };
   }
   if (matchCount === 0) return { level: 'clean', description: 'No tortured phrases detected' };
 
